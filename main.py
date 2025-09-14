@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
+from flask import Flask, request, redirect, url_for, flash, send_from_directory, jsonify
 import os
 from werkzeug.utils import secure_filename
 
@@ -19,77 +19,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/files')
-def files():
-    # Получаем список загруженных файлов
-    uploaded_files = []
-    if os.path.exists(UPLOAD_FOLDER):
-        for filename in os.listdir(UPLOAD_FOLDER):
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-            if os.path.isfile(file_path):
-                file_size = os.path.getsize(file_path)
-                uploaded_files.append({
-                    'name': filename,
-                    'size': f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
-                })
-    
-    return render_template('files.html', files=uploaded_files)
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        flash('Файл не выбран', 'error')
-        return redirect(url_for('files'))
-    
-    file = request.files['file']
-    if file.filename == '':
-        flash('Файл не выбран', 'error')
-        return redirect(url_for('files'))
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        flash(f'Файл {filename} успешно загружен!', 'success')
-    else:
-        flash('Неподдерживаемый тип файла', 'error')
-    
-    return redirect(url_for('files'))
-
-@app.route('/download/<filename>')
-def download_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
-
-@app.route('/delete/<filename>')
-def delete_file(filename):
-    try:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            flash(f'Файл {filename} удален', 'success')
-        else:
-            flash('Файл не найден', 'error')
-    except Exception as e:
-        flash('Ошибка при удалении файла', 'error')
-    
-    return redirect(url_for('files'))
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
-# HTML Templates - создайте папку 'templates' и поместите туда следующие файлы:
-
-# templates/base.html:
-"""
+def get_base_html():
+    return '''
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Minecraft PE Cheats{% endblock %}</title>
+    <title>Minecraft PE Cheats</title>
     <style>
         * {
             margin: 0;
@@ -293,6 +230,78 @@ if __name__ == '__main__':
                 padding: 10px;
             }
         }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(45deg, #ff0080, #8000ff);
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 25px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Courier New', monospace;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 0, 128, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #00ff00, #00ffff);
+            color: #000;
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #ff0000, #ff4444);
+        }
+
+        input[type="file"] {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: linear-gradient(45deg, rgba(255, 0, 128, 0.1), rgba(128, 0, 255, 0.1));
+            border: 1px solid #ff0080;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            color: #00ffff;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .file-size {
+            color: #ffff00;
+            font-size: 0.9em;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -305,26 +314,12 @@ if __name__ == '__main__':
         </div>
 
         <nav class="nav">
-            <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}class="active"{% endif %}>
-                🏠 Главная
-            </a>
-            <a href="{{ url_for('files') }}" {% if request.endpoint == 'files' %}class="active"{% endif %}>
-                📁 Файлы
-            </a>
+            <a href="/" id="home-link">🏠 Главная</a>
+            <a href="/files" id="files-link">📁 Файлы</a>
         </nav>
 
-        <div class="content">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="flash-messages">
-                        {% for category, message in messages %}
-                            <div class="flash-message {{ category }}">{{ message }}</div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-
-            {% block content %}{% endblock %}
+        <div class="content" id="main-content">
+            <!-- Контент будет загружаться здесь -->
         </div>
     </div>
 
@@ -353,160 +348,261 @@ if __name__ == '__main__':
             document.getElementById('matrixBg').innerHTML = '';
             createMatrix();
         }, 10000);
+
+        // Управление навигацией
+        function setActiveLink(activeId) {
+            document.querySelectorAll('.nav a').forEach(link => {
+                link.classList.remove('active');
+            });
+            document.getElementById(activeId).classList.add('active');
+        }
+
+        // Загрузка контента
+        function loadContent(page) {
+            const content = document.getElementById('main-content');
+            
+            if (page === 'home') {
+                setActiveLink('home-link');
+                content.innerHTML = `
+                    <div style="text-align: center;">
+                        <h2 style="color: #ff00ff; margin-bottom: 30px; font-size: 2em; text-shadow: 0 0 15px #ff00ff;">
+                            🚀 ДОБРО ПОЖАЛОВАТЬ В МИР ЧИТОВ! 🚀
+                        </h2>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 40px;">
+                            <div style="background: linear-gradient(45deg, rgba(255, 0, 128, 0.2), rgba(128, 0, 255, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #ff0080;">
+                                <h3 style="color: #00ffff; margin-bottom: 15px; font-size: 1.5em;">⚡ Скорость</h3>
+                                <p>Передвигайтесь со скоростью молнии! Никто не сможет догнать вас в PvP сражениях.</p>
+                                <div style="margin-top: 15px; padding: 10px; background: rgba(0, 255, 255, 0.1); border-radius: 5px;">
+                                    <code style="color: #00ffff;">/effect @s speed 9999 255</code>
+                                </div>
+                            </div>
+                            
+                            <div style="background: linear-gradient(45deg, rgba(0, 255, 0, 0.2), rgba(0, 255, 255, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #00ff00;">
+                                <h3 style="color: #ffff00; margin-bottom: 15px; font-size: 1.5em;">🔥 Полет</h3>
+                                <p>Летайте как в креативе! Исследуйте мир с высоты птичьего полета.</p>
+                                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 255, 0, 0.1); border-radius: 5px;">
+                                    <code style="color: #ffff00;">/gamemode creative</code>
+                                </div>
+                            </div>
+                            
+                            <div style="background: linear-gradient(45deg, rgba(255, 255, 0, 0.2), rgba(255, 0, 0, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #ffff00;">
+                                <h3 style="color: #ff00ff; margin-bottom: 15px; font-size: 1.5em;">💎 Ресурсы</h3>
+                                <p>Получите неограниченные ресурсы одной командой! Стройте без ограничений.</p>
+                                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 0, 255, 0.1); border-radius: 5px;">
+                                    <code style="color: #ff00ff;">/give @s diamond 64</code>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 50px; padding: 30px; background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 15px;">
+                            <h3 style="color: #ff0000; margin-bottom: 20px; font-size: 1.8em;">⚠️ ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ ⚠️</h3>
+                            <p style="font-size: 1.1em; line-height: 1.6;">
+                                Использование читов может повлиять на ваш игровой опыт. Рекомендуется использовать только в одиночной игре 
+                                или на серверах, где это разрешено. Помните о честной игре!
+                            </p>
+                        </div>
+                        
+                        <div style="margin-top: 40px; padding: 25px; background: linear-gradient(45deg, rgba(0, 255, 0, 0.1), rgba(0, 255, 255, 0.1)); border: 2px solid #00ff00; border-radius: 15px;">
+                            <h3 style="color: #00ff00; margin-bottom: 20px; font-size: 1.6em;">📱 Поддерживаемые версии</h3>
+                            <ul style="list-style: none; padding: 0;">
+                                <li style="margin-bottom: 10px; color: #00ffff;">✅ Minecraft PE 1.19+</li>
+                                <li style="margin-bottom: 10px; color: #00ffff;">✅ Minecraft Bedrock Edition</li>
+                                <li style="margin-bottom: 10px; color: #00ffff;">✅ Windows 10 Edition</li>
+                                <li style="margin-bottom: 10px; color: #00ffff;">✅ Xbox One Edition</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="margin-top: 30px;">
+                            <a href="/files" onclick="loadContent('files'); return false;" class="btn">
+                                📁 Перейти к файлам →
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } else if (page === 'files') {
+                setActiveLink('files-link');
+                loadFilesPage();
+            }
+        }
+
+        // Загрузка страницы файлов
+        function loadFilesPage() {
+            const content = document.getElementById('main-content');
+            content.innerHTML = `
+                <h2 style="color: #ff00ff; margin-bottom: 30px; text-align: center; font-size: 2em; text-shadow: 0 0 15px #ff00ff;">
+                    📁 Файловый менеджер
+                </h2>
+
+                <div style="margin-bottom: 30px; padding: 25px; background: linear-gradient(45deg, rgba(0, 255, 0, 0.1), rgba(0, 255, 255, 0.1)); border: 2px solid #00ff00; border-radius: 15px;">
+                    <h3 style="color: #00ff00; margin-bottom: 20px;">📤 Загрузить файл</h3>
+                    <form method="POST" action="/upload" enctype="multipart/form-data" style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <input type="file" name="file" required>
+                        <button type="submit" class="btn">🚀 Загрузить</button>
+                    </form>
+                    <div style="margin-top: 15px; color: #ffff00; font-size: 0.9em;">
+                        Поддерживаемые форматы: TXT, PDF, PNG, JPG, GIF, ZIP, RAR, APK, MCPACK, MCWORLD (макс. 16MB)
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.7); border: 2px solid #ff00ff; border-radius: 15px; padding: 25px;">
+                    <h3 style="color: #ff00ff; margin-bottom: 20px;">📋 Загруженные файлы</h3>
+                    <div id="files-list">
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="color: #ffff00;">Загрузка списка файлов...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 30px; padding: 20px; background: rgba(255, 255, 0, 0.1); border: 2px solid #ffff00; border-radius: 15px;">
+                    <h4 style="color: #ffff00; margin-bottom: 15px;">💡 Советы по использованию:</h4>
+                    <ul style="color: #00ff00; line-height: 1.8;">
+                        <li>🎮 Загружайте APK файлы с читами для быстрой установки</li>
+                        <li>🗺️ MCWORLD файлы - это готовые миры с читами</li>
+                        <li>📦 MCPACK файлы содержат текстуры и поведения</li>
+                        <li>📝 TXT файлы с командами и инструкциями</li>
+                        <li>📸 Скриншоты и доказательства работы читов</li>
+                    </ul>
+                </div>
+            `;
+            
+            // Загружаем список файлов
+            loadFilesList();
+        }
+
+        // Загрузка списка файлов
+        function loadFilesList() {
+            fetch('/api/files')
+                .then(response => response.json())
+                .then(files => {
+                    const filesList = document.getElementById('files-list');
+                    
+                    if (files.length === 0) {
+                        filesList.innerHTML = `
+                            <div style="text-align: center; padding: 40px; color: #888;">
+                                <div style="font-size: 3em; margin-bottom: 15px;">📭</div>
+                                <div style="font-size: 1.2em; color: #ffff00;">Файлы пока не загружены</div>
+                                <div style="margin-top: 10px; color: #888;">Загрузите первый файл, используя форму выше</div>
+                            </div>
+                        `;
+                    } else {
+                        let filesHtml = '';
+                        files.forEach(file => {
+                            filesHtml += `
+                                <div class="file-item">
+                                    <div class="file-info">
+                                        <div class="file-name">📄 ${file.name}</div>
+                                        <div class="file-size">💾 Размер: ${file.size}</div>
+                                    </div>
+                                    <div class="file-actions">
+                                        <a href="/download/${file.name}" class="btn btn-success">⬇️ Скачать</a>
+                                        <a href="/delete/${file.name}" class="btn btn-danger" 
+                                           onclick="return confirm('Вы уверены, что хотите удалить файл ${file.name}?')">
+                                            🗑️ Удалить
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        filesList.innerHTML = filesHtml;
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки файлов:', error);
+                    document.getElementById('files-list').innerHTML = `
+                        <div style="text-align: center; padding: 20px; color: #ff0000;">
+                            Ошибка загрузки файлов
+                        </div>
+                    `;
+                });
+        }
+
+        // Обработка навигации
+        document.getElementById('home-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            loadContent('home');
+            history.pushState(null, '', '/');
+        });
+
+        document.getElementById('files-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            loadContent('files');
+            history.pushState(null, '', '/files');
+        });
+
+        // Загрузка начального контента
+        const path = window.location.pathname;
+        if (path === '/files') {
+            loadContent('files');
+        } else {
+            loadContent('home');
+        }
     </script>
 </body>
 </html>
-"""
+    '''
 
-# templates/index.html:
-"""
-{% extends "base.html" %}
+@app.route('/')
+def index():
+    return get_base_html()
 
-{% block content %}
-<div style="text-align: center;">
-    <h2 style="color: #ff00ff; margin-bottom: 30px; font-size: 2em; text-shadow: 0 0 15px #ff00ff;">
-        🚀 ДОБРО ПОЖАЛОВАТЬ В МИР ЧИТОВ! 🚀
-    </h2>
+@app.route('/files')
+def files():
+    return get_base_html()
+
+@app.route('/api/files')
+def api_files():
+    # Получаем список загруженных файлов
+    uploaded_files = []
+    if os.path.exists(UPLOAD_FOLDER):
+        for filename in os.listdir(UPLOAD_FOLDER):
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.isfile(file_path):
+                file_size = os.path.getsize(file_path)
+                uploaded_files.append({
+                    'name': filename,
+                    'size': f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
+                })
     
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 40px;">
-        <div style="background: linear-gradient(45deg, rgba(255, 0, 128, 0.2), rgba(128, 0, 255, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #ff0080;">
-            <h3 style="color: #00ffff; margin-bottom: 15px; font-size: 1.5em;">⚡ Скорость</h3>
-            <p>Передвигайтесь со скоростью молнии! Никто не сможет догнать вас в PvP сражениях.</p>
-            <div style="margin-top: 15px; padding: 10px; background: rgba(0, 255, 255, 0.1); border-radius: 5px;">
-                <code style="color: #00ffff;">/effect @s speed 9999 255</code>
-            </div>
-        </div>
-        
-        <div style="background: linear-gradient(45deg, rgba(0, 255, 0, 0.2), rgba(0, 255, 255, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #00ff00;">
-            <h3 style="color: #ffff00; margin-bottom: 15px; font-size: 1.5em;">🔥 Полет</h3>
-            <p>Летайте как в креативе! Исследуйте мир с высоты птичьего полета.</p>
-            <div style="margin-top: 15px; padding: 10px; background: rgba(255, 255, 0, 0.1); border-radius: 5px;">
-                <code style="color: #ffff00;">/gamemode creative</code>
-            </div>
-        </div>
-        
-        <div style="background: linear-gradient(45deg, rgba(255, 255, 0, 0.2), rgba(255, 0, 0, 0.2)); padding: 25px; border-radius: 15px; border: 2px solid #ffff00;">
-            <h3 style="color: #ff00ff; margin-bottom: 15px; font-size: 1.5em;">💎 Ресурсы</h3>
-            <p>Получите неограниченные ресурсы одной командой! Стройте без ограничений.</p>
-            <div style="margin-top: 15px; padding: 10px; background: rgba(255, 0, 255, 0.1); border-radius: 5px;">
-                <code style="color: #ff00ff;">/give @s diamond 64</code>
-            </div>
-        </div>
-    </div>
+    return jsonify(uploaded_files)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        flash('Файл не выбран', 'error')
+        return redirect('/files')
     
-    <div style="margin-top: 50px; padding: 30px; background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 15px;">
-        <h3 style="color: #ff0000; margin-bottom: 20px; font-size: 1.8em;">⚠️ ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ ⚠️</h3>
-        <p style="font-size: 1.1em; line-height: 1.6;">
-            Использование читов может повлиять на ваш игровой опыт. Рекомендуется использовать только в одиночной игре 
-            или на серверах, где это разрешено. Помните о честной игре!
-        </p>
-    </div>
+    file = request.files['file']
+    if file.filename == '':
+        flash('Файл не выбран', 'error')
+        return redirect('/files')
     
-    <div style="margin-top: 40px; padding: 25px; background: linear-gradient(45deg, rgba(0, 255, 0, 0.1), rgba(0, 255, 255, 0.1)); border: 2px solid #00ff00; border-radius: 15px;">
-        <h3 style="color: #00ff00; margin-bottom: 20px; font-size: 1.6em;">📱 Поддерживаемые версии</h3>
-        <ul style="list-style: none; padding: 0;">
-            <li style="margin-bottom: 10px; color: #00ffff;">✅ Minecraft PE 1.19+</li>
-            <li style="margin-bottom: 10px; color: #00ffff;">✅ Minecraft Bedrock Edition</li>
-            <li style="margin-bottom: 10px; color: #00ffff;">✅ Windows 10 Edition</li>
-            <li style="margin-bottom: 10px; color: #00ffff;">✅ Xbox One Edition</li>
-        </ul>
-    </div>
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        flash(f'Файл {filename} успешно загружен!', 'success')
+    else:
+        flash('Неподдерживаемый тип файла', 'error')
     
-    <div style="margin-top: 30px;">
-        <a href="{{ url_for('files') }}" style="display: inline-block; padding: 15px 30px; background: linear-gradient(45deg, #ff0080, #8000ff); color: white; text-decoration: none; border-radius: 30px; font-size: 1.2em; font-weight: bold; text-transform: uppercase; transition: all 0.3s ease; border: 2px solid transparent;">
-            📁 Перейти к файлам →
-        </a>
-    </div>
-</div>
+    return redirect('/files')
 
-<style>
-    .code-block {
-        background: rgba(0, 0, 0, 0.5);
-        border: 1px solid #00ff00;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 15px 0;
-        font-family: 'Courier New', monospace;
-        color: #00ff00;
-    }
-</style>
-{% endblock %}
-"""
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
 
-# templates/files.html:
-"""
-{% extends "base.html" %}
-
-{% block content %}
-<h2 style="color: #ff00ff; margin-bottom: 30px; text-align: center; font-size: 2em; text-shadow: 0 0 15px #ff00ff;">
-    📁 Файловый менеджер
-</h2>
-
-<div style="margin-bottom: 30px; padding: 25px; background: linear-gradient(45deg, rgba(0, 255, 0, 0.1), rgba(0, 255, 255, 0.1)); border: 2px solid #00ff00; border-radius: 15px;">
-    <h3 style="color: #00ff00; margin-bottom: 20px;">📤 Загрузить файл</h3>
-    <form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data" style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-        <input type="file" name="file" required style="flex: 1; min-width: 200px; padding: 10px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; border-radius: 5px; color: #00ff00; font-family: 'Courier New', monospace;">
-        <button type="submit" style="padding: 12px 24px; background: linear-gradient(45deg, #ff0080, #8000ff); color: white; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; text-transform: uppercase;">
-            🚀 Загрузить
-        </button>
-    </form>
-    <div style="margin-top: 15px; color: #ffff00; font-size: 0.9em;">
-        Поддерживаемые форматы: TXT, PDF, PNG, JPG, GIF, ZIP, RAR, APK, MCPACK, MCWORLD (макс. 16MB)
-    </div>
-</div>
-
-<div style="background: rgba(0, 0, 0, 0.7); border: 2px solid #ff00ff; border-radius: 15px; padding: 25px;">
-    <h3 style="color: #ff00ff; margin-bottom: 20px;">📋 Загруженные файлы</h3>
+@app.route('/delete/<filename>')
+def delete_file(filename):
+    try:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            flash(f'Файл {filename} удален', 'success')
+        else:
+            flash('Файл не найден', 'error')
+    except Exception as e:
+        flash('Ошибка при удалении файла', 'error')
     
-    {% if files %}
-        <div style="display: grid; gap: 15px;">
-            {% for file in files %}
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; background: linear-gradient(45deg, rgba(255, 0, 128, 0.1), rgba(128, 0, 255, 0.1)); border: 1px solid #ff0080; border-radius: 10px; transition: all 0.3s ease;">
-                <div style="flex: 1;">
-                    <div style="color: #00ffff; font-weight: bold; margin-bottom: 5px;">📄 {{ file.name }}</div>
-                    <div style="color: #ffff00; font-size: 0.9em;">💾 Размер: {{ file.size }}</div>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <a href="{{ url_for('download_file', filename=file.name) }}" 
-                       style="padding: 8px 16px; background: linear-gradient(45deg, #00ff00, #00ffff); color: #000; text-decoration: none; border-radius: 20px; font-weight: bold; font-size: 0.9em; transition: all 0.3s ease;">
-                        ⬇️ Скачать
-                    </a>
-                    <a href="{{ url_for('delete_file', filename=file.name) }}" 
-                       style="padding: 8px 16px; background: linear-gradient(45deg, #ff0000, #ff4444); color: white; text-decoration: none; border-radius: 20px; font-weight: bold; font-size: 0.9em; transition: all 0.3s ease;"
-                       onclick="return confirm('Вы уверены, что хотите удалить файл {{ file.name }}?')">
-                        🗑️ Удалить
-                    </a>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div style="text-align: center; padding: 40px; color: #888;">
-            <div style="font-size: 3em; margin-bottom: 15px;">📭</div>
-            <div style="font-size: 1.2em; color: #ffff00;">Файлы пока не загружены</div>
-            <div style="margin-top: 10px; color: #888;">Загрузите первый файл, используя форму выше</div>
-        </div>
-    {% endif %}
-</div>
+    return redirect('/files')
 
-<div style="margin-top: 30px; padding: 20px; background: rgba(255, 255, 0, 0.1); border: 2px solid #ffff00; border-radius: 15px;">
-    <h4 style="color: #ffff00; margin-bottom: 15px;">💡 Советы по использованию:</h4>
-    <ul style="color: #00ff00; line-height: 1.8;">
-        <li>🎮 Загружайте APK файлы с читами для быстрой установки</li>
-        <li>🗺️ MCWORLD файлы - это готовые миры с читами</li>
-        <li>📦 MCPACK файлы содержат текстуры и поведения</li>
-        <li>📝 TXT файлы с командами и инструкциями</li>
-        <li>📸 Скриншоты и доказательства работы читов</li>
-    </ul>
-</div>
-{% endblock %}
-"""
-
-# Для запуска создайте структуру проекта:
-# minecraft_cheats/
-# ├── app.py (этот файл)
-# ├── templates/
-# │   ├── base.html
-# │   ├── index.html
-# │   └── files.html
-# └── uploads/ (создастся автоматически)
+if __name__ == '__main__':
+    app.run(debug=True)
